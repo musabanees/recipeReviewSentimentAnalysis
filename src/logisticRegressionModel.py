@@ -15,9 +15,11 @@ class LogisticRegressionModel:
         """
         self.max_iteration = 1000
         self.randomState = 42
+        self.crossValidationScore = None
         self.model = LogisticRegression(max_iter = self.max_iteration, 
                                         random_state = self.randomState,
                                         class_weight={0:2.0, 1:1.0})
+        
         self.kfolds = StratifiedKFold(n_splits=n_splits, 
                                      shuffle=True, 
                                      random_state = self.randomState)
@@ -41,8 +43,11 @@ class LogisticRegressionModel:
                                     cv=self.kfolds, 
                                     scoring = self.f1ScorerMetric)
         
+        self.crossValidationScore = f1ScoresValues
+        
         print(f"Mean F1-Score: {np.mean(f1ScoresValues):.4f}")
         print(f"Standard Deviation of F1-Score: {np.std(f1ScoresValues):.4f}")
+
 
     def train(self, X_train, y_train):
         """
@@ -54,24 +59,6 @@ class LogisticRegressionModel:
         """
         self.model.fit(X_train, y_train)
         print(" ** Model has Trained! ** ")
-
-    # def evaluateModel(self, X_test, y_test):
-    #     """
-    #     Evaluates the model on the test set.
-
-    #     Parameters:
-    #     - X_test: Test feature matrix.
-    #     - y_test: Test target labels.
-
-    #     Returns:
-    #     - F1-Score on the test data.
-    #     """
-    #     y_pred = self.model.predict(X_test)
-    #     testF1Score = f1_score(y_test, y_pred, average='binary')
-    #     print(f"** F1-Score on Test Data: {testF1Score:.2f} **")
-    #     print("\n** Classification Report: **")
-    #     print(classification_report(y_test, y_pred))
-    #     return testF1Score
 
     def predict( self, X_test ):
         """
@@ -87,3 +74,11 @@ class LogisticRegressionModel:
         y_pred_proba = self.model.predict_proba(X_test)[:, 1]
 
         return y_pred , y_pred_proba
+    
+
+    def returnModel(self):
+        return self.model
+    
+        
+    def returnf1CrossValidationScore(self):
+        return self.crossValidationScore

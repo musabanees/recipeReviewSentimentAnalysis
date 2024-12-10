@@ -7,11 +7,13 @@ class LightGBMModel:
         """
         Initializes the LightGBM model with specified hyperparameters.
         """
-        self.nestimators = 50
-        self.learningRate = 0.1 
-        self.maxDepth = -1
-        self.classWeight = {0: 3.0, 1:2.0}
+        self.nestimators = 50 # 50 trees
+        self.learningRate = 0.1 # to speed up the learning process
+        self.maxDepth = -1 # No limit on Tree depth
+        self.classWeight = {0: 2.0, 1:1.0} # Adding more weights to the minortiy class 
         self.randomState = 42
+
+        self.crossValidationScore = None
 
         print("***TESTING WEIGHTS: " , self.classWeight)
 
@@ -45,6 +47,8 @@ class LightGBMModel:
                                         cv = self.kFold, 
                                         scoring=self.f1Scorer)
         
+        self.crossValidationScore = f1Scorevalues
+
         print(f"Mean F1-Score: {f1Scorevalues.mean():.2f}")
         print(f"Standard Deviation of F1-Score: {f1Scorevalues.std():.2f}")
 
@@ -58,27 +62,6 @@ class LightGBMModel:
         """
         self.model.fit(X_train, y_train)
         print(" ** Model has Trained! ** ")
-
-
-    # def evaluateModel(self, X_test, y_test):
-    #     """
-    #     Evaluates the trained model on the test data and prints performance metrics.
-
-    #     Args:
-    #         X_test: Test features.
-    #         y_test: Test labels.
-
-    #     Returns:
-    #         dict: Evaluation metrics including precision, recall, F1-score.
-    #     """
-    #     y_pred = self.model.predict(X_test)
-    #     test_f1 = f1_score(y_test, 
-    #                        y_pred, 
-    #                        average='binary')
-        
-    #     print(f" ** F1 Score on Test Data: {test_f1:.2f} **")
-    #     print("\n** Classification Report: **")
-    #     print(classification_report(y_test, y_pred))
 
     def predict( self, X_test ):
         """
@@ -94,3 +77,9 @@ class LightGBMModel:
         y_pred_proba = self.model.predict_proba(X_test)[:, 1]
 
         return y_pred , y_pred_proba
+    
+    def returnModel(self):
+        return self.model
+    
+    def returnf1CrossValidationScore(self):
+        return self.crossValidationScore

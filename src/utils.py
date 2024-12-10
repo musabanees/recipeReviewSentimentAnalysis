@@ -10,12 +10,11 @@ import matplotlib.pyplot as plt
 from collections import Counter
 from nltk.corpus import stopwords
 from nltk.stem import WordNetLemmatizer
-from imblearn.over_sampling import ADASYN
-from imblearn.over_sampling import SMOTE
-from imblearn.under_sampling import AllKNN
+from imblearn.over_sampling import ADASYN, SMOTE
+from sklearn.metrics import make_scorer, recall_score
 
 from sklearn.metrics import confusion_matrix , f1_score , classification_report
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.feature_extraction.text import TfidfVectorizer
 
 from logisticRegressionModel import LogisticRegressionModel
@@ -23,7 +22,13 @@ from lightGBMModel import LightGBMModel
 
 import tensorflow as tf
 
-def read_dataset():
+import scipy
+
+from collections import Counter
+from imblearn.over_sampling import ADASYN
+import numpy as np
+
+def readDataset():
     """
         Reading the dataset and returning.
     """
@@ -94,6 +99,7 @@ def dataCleaning( data ):
 
     return data
 
+
 def displayRatings( data ):
     """
     Displays a bar chart of sentiment class distribution from the dataset.
@@ -123,89 +129,36 @@ def displayRatings( data ):
     plt.xticks(rotation=0)
     plt.show()
 
-def balanceClass( data, targetRating = 'sentiment', factor = 8000 ):
-    """
-    Balances the dataset by reducing the majority class size.
-
-    Args:
-        data (pd.DataFrame): Dataset containing the target rating column.
-        targetRating (str): Column name for classification target. Default is 'sentiment'.
-        factor (int): Number of rows to retain from the positive class. Default is 8000.
-
-    Returns:
-        pd.DataFrame: Balanced dataset with majority class reduced and rows shuffled.
-    """
-    
-    positiveRows = data[data[targetRating] == 1]  
-    negativeRows = data[data[targetRating] == 0] 
-
-    positiveRowsSample = positiveRows.sample( n = factor,
-                                                 random_state=42)  
-    positiveRows = positiveRows.drop(positiveRowsSample.index) 
-
-    data = pd.concat([positiveRows, negativeRows])  
-    data = data.sample( frac=1, 
-                        random_state=42).reset_index(drop=True) 
-
-    data = data.dropna(subset=['cleaned_text'])
-
-    return data
-
-def allknnAlgo( X_train, y_train ):
-    """
-    Applies the All-KNN algorithm for undersampling the training data.
-
-    Args:
-        X_train (pd.DataFrame or np.ndarray): Features of the training dataset.
-        y_train (pd.Series or np.ndarray): Target labels of the training dataset.
-
-    Returns:
-        None: Prints the class distribution after All-KNN undersampling.
-    """
-    allKnn = AllKNN( allow_minority=False )
-    X_trainAllknn, y_trainAllknn = allKnn.fit_resample(X_train, y_train)
-
-    print("Class distribution after All-KNN undersampling:", Counter(y_trainAllknn))
-    return X_trainAllknn, y_trainAllknn
-
-def smoteAlgo( X_train, y_train ):
-    """
-    Apply SMOTE for oversampling the minority class.
-    
-    Parameters:
-        X_train: Features of the training set (sparse or dense matrix).
-        y_train: Labels of the training set.
-    
-    Returns:
-        X_resampled: Resampled features.
-        y_resampled: Resampled labels.
-    """
-    smoteObj = SMOTE(sampling_strategy={0: y_train.value_counts()[1]}, 
-                                        random_state=42)
-    xSmoteData, ySmoteData = smoteObj.fit_resample(X_train, y_train)
-    
-    print("Class distribution after SMOTE:", Counter(ySmoteData))
-    
-    return xSmoteData, ySmoteData
-
 def adasynAlgo(X_train, y_train):
-    """
-    Applies the ADASYN algorithm for oversampling the training data.
 
-    Args:
-        X_train (pd.DataFrame or np.ndarray): Training features.
-        y_train (pd.Series or np.ndarray): Training labels.
+    # if scipy.sparse.issparse(X_train):
+    #     X_train = X_train.toarray()
 
-    Returns:
-        tuple: Resampled features and labels after ADASYN.
-    """
-    adasynObj = ADASYN(random_state = 777, 
-                    sampling_strategy = 1.0)
-    xadasynData, yadasynData = adasynObj.fit_resample(X_train, y_train)
+    # y_train = np.ravel(y_train)
+
+    targetClass = Counter(y_train)
     
-    print("Class distribution after ADASYN:", Counter(yadasynData))
+    # if len(distClass) != 2:
+    #     raise ValueError("ADASYN requires binary classification. Found {} classes.".format(len(distClass)))
+
+    majorityClassHighCount = max(targetClass, key = targetClass.get)
+    minorityClassHighCount = min(targetClass, key = targetClass.get)
     
-    return xadasynData, yadasynData
+    SampleDifference = targetClass[majorityClassHighCount] - targetClass[minorityClassHighCount]
+
+    adasyn = ADASYN(
+        n_neighbors = 2,
+        sampling_strategy = {minorityClassHighCount: SampleDifference},
+        random_state = 42
+    )
+
+    XSampledData, ySampledData = adasyn.fit_resample(X_train, y_train)
+
+    print(f"Original shape: {X_train.shape}, Resampled shape: {XSampledData.shape}")
+    print(f"Original class distribution: {Counter(y_train)}")
+    print(f"Resampled class distribution: {Counter(ySampledData)}")
+
+    return XSampledData, ySampledData
 
 def trainBaselineModel(baselineClassifier, vectorTrain, trainLabel, vectorTest , testLabel, plotLabel = "Confusion Matrix"):
     """
@@ -254,20 +207,46 @@ def tfidfVectorizationProcess( Xdata , DataLabels ):
     """
     X_train, X_test, y_train, y_test = train_test_split( Xdata, 
                                                          DataLabels, 
-                                                         test_size=0.3, 
+                                                         test_size=0.2, 
                                                          random_state=42)
 
-    tfidfVectorizer = TfidfVectorizer( ngram_range=(1, 3), 
-                                        max_df=0.75, 
-                                        min_df=10, 
+    tfidfVectorizer = TfidfVectorizer( ngram_range=(1, 2), 
+                                        max_df=0.6, 
+                                        min_df=0.01, 
                                         sublinear_tf=True)
+    
+    
 
     X_train = tfidfVectorizer.fit_transform( X_train )
     X_test = tfidfVectorizer.transform( X_test )
+
     print("Shape After Vectorization! ")
     print(X_train.shape, X_test.shape, y_train.shape, y_test.shape)
 
     return X_train, X_test, y_train, y_test , tfidfVectorizer
+
+
+def smoteAlgo( X_train, y_train ):
+    """
+    Apply SMOTE for oversampling the minority class.
+    
+    Parameters:
+        X_train: Features of the training set (sparse or dense matrix).
+        y_train: Labels of the training set.
+    
+    Returns:
+        X_resampled: Resampled features.
+        y_resampled: Resampled labels.
+    """
+    smoteObj = SMOTE(sampling_strategy={0: y_train.value_counts()[1]}, 
+                                        random_state=42)
+    xSmoteData, ySmoteData = smoteObj.fit_resample(X_train, y_train)
+
+    
+    print("Class distribution Before SMOTE:", Counter(y_train))    
+    print("Class distribution after SMOTE:", Counter(ySmoteData))
+    
+    return xSmoteData, ySmoteData
 
 
 def runModels( xSmoteData, ySmoteData, X_test, y_test ):
@@ -287,13 +266,11 @@ def runModels( xSmoteData, ySmoteData, X_test, y_test ):
     logisticRegressionModel = LogisticRegressionModel()
     logisticRegressionModel.crossValidation(xSmoteData, ySmoteData)
     logisticRegressionModel.train(xSmoteData, ySmoteData)
-    # logisticRegressionModel.evaluateModel(X_test, y_test)
 
 
     lightGBMModel = LightGBMModel()
     lightGBMModel.crossValidation(xSmoteData, ySmoteData)
     lightGBMModel.train(xSmoteData, ySmoteData)
-    # lightGBMModel.evaluateModel(X_test, y_test)
 
     return logisticRegressionModel , lightGBMModel
 
@@ -302,6 +279,7 @@ def evaluateModel( model , X_test, y_test ):
 
     yTestPred , _ = model.predict( X_test )
     testF1Score = f1_score(y_test, yTestPred, average='binary')
+    f1Scores = model.returnf1CrossValidationScore()
     print(f"** F1-Score on Test Data: {testF1Score:.2f} **")
 
     print("\n** Classification Report: **")
@@ -315,6 +293,28 @@ def evaluateModel( model , X_test, y_test ):
     plt.title('Confusion Matrix')
     plt.show()
 
+
+    plt.figure(figsize=(10, 6))
+    plt.bar(range(1, len(f1Scores) + 1), f1Scores, 
+            color='skyblue', edgecolor='navy', alpha=0.7)
+    
+    meanScore = np.mean(f1Scores)
+    plt.axhline(y = meanScore, color='red', linestyle='--', 
+                label=f'Mean F1-Score: {meanScore:.2f}')
+    
+    plt.title('Cross-Validation F1 Scores', fontsize=16)
+    plt.xlabel('Fold Number', fontsize=12)
+    plt.ylabel('F1 Score', fontsize=12)
+    plt.ylim(0, 1)  
+    
+    for i, score in enumerate(f1Scores):
+        plt.text(i + 1, score, f'{score:.3f}', 
+                 ha='center', va='bottom')
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+
 def predictSentiment( text , tfidfVectorizer, model ):
 
     tfidfVector = tfidfVectorizer.transform([text])
@@ -324,3 +324,44 @@ def predictSentiment( text , tfidfVectorizer, model ):
 
     print(f"Predicted Label: {sentimentDic[y_pred[0]]}")
     print(f"Probability of Positive Class: {y_pred_proba}")
+
+
+def show_word_contributions(text, tfidfVectorizer, model, top_n=10):
+    """
+    Display how unigrams and bigrams contribute to the model's decision for a given text.
+    
+    Args:
+        text (str): The input text to analyze.
+        tfidfVectorizer: The trained TfidfVectorizer.
+        model: The trained model (e.g., Logistic Regression or LightGBM).
+        top_n (int): Number of top contributing words/n-grams to display.
+    """
+    textVector = tfidfVectorizer.transform([text]).toarray()[0]
+    featureNames = tfidfVectorizer.get_feature_names_out()
+    
+    if hasattr(model, "coef_"):
+        getModelCoefficients = model.coef_[0]
+        wordContributions = [(featureNames[i], textVector[i] * getModelCoefficients[i]) 
+                              for i in range(len(featureNames)) if textVector[i] > 0]
+    elif hasattr(model, "feature_importances_"):
+        getFeatureImportances = model.feature_importances_
+        wordContributions = [(featureNames[i], textVector[i] * getFeatureImportances[i]) 
+                              for i in range(len(featureNames)) if textVector[i] > 0]
+    else:
+        print("Wrong Model Object Provided!")
+        return
+    
+    wordContributions = sorted(wordContributions, key=lambda x: abs(x[1]), reverse=True)
+    
+    print(f"\nTop {top_n} Contributions for Text:")
+    for terms, contribution in wordContributions[:top_n]:
+        print(f"{terms}: {contribution:.3f}")
+
+    terms, scores = zip(*wordContributions[:top_n])
+    plt.figure(figsize=(10, 8))
+    plt.barh(terms, scores, color='blue')
+    plt.xlabel("Contribution to Prediction")
+    plt.title("Word Contributions to Prediction")
+    plt.gca().invert_yaxis()
+    plt.show()
+
